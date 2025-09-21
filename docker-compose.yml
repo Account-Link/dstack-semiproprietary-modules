@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  # Semi-proprietary module enclave
+  semiprop-enclave:
+    build:
+      context: .
+      dockerfile: enclave/Dockerfile
+    container_name: semiprop-sudoku-enclave
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DEFAULT_MODULE_ID=sudoku-solver-v1
+    volumes:
+      # Mount bulletin board for persistence
+      - ./bulletin_board:/app/bulletin_board
+      # Mount private modules for publishing
+      - ./private_module:/app/private_module:ro
+    restart: unless-stopped
+
+    # Security configurations for enclave simulation
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/node_modules/.cache
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Module publisher tool (for development)
+  module-publisher:
+    build:
+      context: .
+      dockerfile: tools/Dockerfile.publisher
+    container_name: module-publisher
+    volumes:
+      - ./bulletin_board:/app/bulletin_board
+      - ./private_module:/app/private_module:ro
+    profiles:
+      - tools
+    command: ["sleep", "infinity"]  # Keep running for manual use
+
+  # Example client
+  example-client:
+    build:
+      context: .
+      dockerfile: examples/Dockerfile.client
+    container_name: semiprop-client
+    depends_on:
+      - semiprop-enclave
+    environment:
+      - ENCLAVE_URL=http://semiprop-enclave:3000
+    profiles:
+      - demo
+    volumes:
+      - ./examples:/app/examples:ro
+
+networks:
+  default:
+    driver: bridge

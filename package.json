@@ -1,0 +1,26 @@
+{
+  "name": "dstack-sudoku-solver",
+  "version": "1.0.0",
+  "description": "A secure sudoku solving service with proprietary module loading for DStack",
+  "main": "sudoku-service.js",
+  "scripts": {
+    "start": "node sudoku-service.js",
+    "test": "node test/test-service.js",
+    "test-module": "node test/test-module-loading.js"
+  },
+  "keywords": [
+    "sudoku",
+    "dstack",
+    "proprietary-modules",
+    "secure-computation",
+    "tee"
+  ],
+  "author": "xordi-examples",
+  "license": "MIT",
+  "dependencies": {
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

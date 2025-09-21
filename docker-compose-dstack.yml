@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  # Semi-proprietary module enclave for dstack deployment
+  semiprop-enclave:
+    build:
+      context: .
+      dockerfile: enclave/Dockerfile
+    container_name: semiprop-sudoku-enclave
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DEFAULT_MODULE_ID=sudoku-solver-v1
+    volumes:
+      # Mount dstack socket for TEE integration
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      # Mount bulletin board for development (ephemeral in dstack)
+      - ./bulletin_board:/app/bulletin_board
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
