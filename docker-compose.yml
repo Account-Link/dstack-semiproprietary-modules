@@ -15,7 +15,7 @@ services:
       - DEFAULT_MODULE_ID=sudoku-solver-v1
     volumes:
       # Mount bulletin board for persistence
-      - ./bulletin_board:/app/bulletin_board
+      - ./bulletin_board:/app/bulletin_board:rw
       # Mount private modules for publishing
       - ./private_module:/app/private_module:ro
     restart: unless-stopped
@@ -27,6 +27,7 @@ services:
     tmpfs:
       - /tmp
       - /app/node_modules/.cache
+      - /app/test_temp:uid=1001,gid=1001
 
     # Resource limits
     deploy:

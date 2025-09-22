@@ -1,10 +1,12 @@
 const { SudokuModuleLoader } = require('../enclave/sudoku-module-loader');
 const fs = require('fs');
 
-console.log('🧪 Testing Codesigned Sudoku Module Verification...\n');
+console.log('🧪 Testing Sudoku Module Verification...\n');
 
-async function testCodesignedVerification() {
+async function testSudokuVerification() {
   const loader = new SudokuModuleLoader();
+  // Use tmpfs directory in Docker (detected by read-only filesystem)
+  const testDir = fs.existsSync('./test_temp') ? './test_temp' : './test';
 
   console.log('🔍 TEST 1: Self-contained solver (should PASS)');
   console.log('=' .repeat(60));
@@ -50,17 +52,18 @@ function validatePuzzle(puzzle) {
 module.exports = { solveSudoku, validatePuzzle };
 `;
 
-  fs.writeFileSync('./test/fs-access-solver.js', fsAccessSolver);
+  const fsAccessPath = `${testDir}/fs-access-solver.js`;
+  fs.writeFileSync(fsAccessPath, fsAccessSolver);
 
   try {
-    const module = loader.loadModule('./test/fs-access-solver.js');
+    const module = loader.loadModule(fsAccessPath);
     console.log('❌ FS access solver incorrectly accepted!');
   } catch (error) {
     console.log('✅ FS access solver correctly rejected');
     console.log('   Reason: External module access detected');
   } finally {
-    if (fs.existsSync('./test/fs-access-solver.js')) {
-      fs.unlinkSync('./test/fs-access-solver.js');
+    if (fs.existsSync(fsAccessPath)) {
+      fs.unlinkSync(fsAccessPath);
     }
   }
 
@@ -83,17 +86,18 @@ function validatePuzzle(puzzle) {
 module.exports = { solveSudoku, validatePuzzle };
 `;
 
-  fs.writeFileSync('./test/network-solver.js', networkSolver);
+  const networkPath = `${testDir}/network-solver.js`;
+  fs.writeFileSync(networkPath, networkSolver);
 
   try {
-    const module = loader.loadModule('./test/network-solver.js');
+    const module = loader.loadModule(networkPath);
     console.log('❌ Network solver incorrectly accepted!');
   } catch (error) {
     console.log('✅ Network solver correctly rejected');
     console.log('   Reason: External API call detected');
   } finally {
-    if (fs.existsSync('./test/network-solver.js')) {
-      fs.unlinkSync('./test/network-solver.js');
+    if (fs.existsSync(networkPath)) {
+      fs.unlinkSync(networkPath);
     }
   }
 
@@ -108,17 +112,18 @@ function solve(puzzle) {
 module.exports = { solve }; // Missing solveSudoku and validatePuzzle
 `;
 
-  fs.writeFileSync('./test/incomplete-solver.js', incompleteModule);
+  const incompletePath = `${testDir}/incomplete-solver.js`;
+  fs.writeFileSync(incompletePath, incompleteModule);
 
   try {
-    const module = loader.loadModule('./test/incomplete-solver.js');
+    const module = loader.loadModule(incompletePath);
     console.log('❌ Incomplete solver incorrectly accepted!');
   } catch (error) {
     console.log('✅ Incomplete solver correctly rejected');
     console.log('   Reason: Missing required exports');
   } finally {
-    if (fs.existsSync('./test/incomplete-solver.js')) {
-      fs.unlinkSync('./test/incomplete-solver.js');
+    if (fs.existsSync(incompletePath)) {
+      fs.unlinkSync(incompletePath);
     }
   }
 
@@ -141,25 +146,26 @@ function validatePuzzle(puzzle) {
 module.exports = { solveSudoku, validatePuzzle };
 `;
 
-  fs.writeFileSync('./test/global-access-solver.js', globalAccessSolver);
+  const globalPath = `${testDir}/global-access-solver.js`;
+  fs.writeFileSync(globalPath, globalAccessSolver);
 
   try {
-    const module = loader.loadModule('./test/global-access-solver.js');
+    const module = loader.loadModule(globalPath);
     console.log('❌ Global access solver incorrectly accepted!');
   } catch (error) {
     console.log('✅ Global access solver correctly rejected');
     console.log('   Reason: Global scope access detected');
   } finally {
-    if (fs.existsSync('./test/global-access-solver.js')) {
-      fs.unlinkSync('./test/global-access-solver.js');
+    if (fs.existsSync(globalPath)) {
+      fs.unlinkSync(globalPath);
     }
   }
 
   console.log('\n' + '=' .repeat(60));
-  console.log('🎉 Codesigned verification test completed!');
+  console.log('🎉 Sudoku verification test completed!');
   console.log('✅ Self-contained solver: ACCEPTED');
   console.log('❌ All cheating attempts: REJECTED');
   console.log('\nThe verifier successfully proves modules are truly self-contained.');
 }
 
-testCodesignedVerification().catch(console.error);
+testSudokuVerification().catch(console.error);

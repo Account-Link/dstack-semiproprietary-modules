@@ -17,14 +17,14 @@ COPY scripts/ ./scripts/
 COPY test/ ./test/
 
 # Create directories for bulletin board and modules
-RUN mkdir -p bulletin_board private_module
+RUN mkdir -p bulletin_board private_module test_temp
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S enclave && \
     adduser -S semiprop -u 1001 -G enclave
 
 # Set proper permissions
-RUN chown -R semiprop:enclave /app && chmod 775 /app/bulletin_board
+RUN chown -R semiprop:enclave /app && chmod 775 /app/bulletin_board && chmod 775 /app/test_temp
 USER semiprop
 
 # Expose port

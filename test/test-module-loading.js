@@ -32,17 +32,20 @@ function solveSudoku(puzzle) {
 module.exports = { solveSudoku };
 `;
 
-  fs.writeFileSync('./test/malicious-module.js', maliciousModule);
+  // Use tmpfs directory in Docker (detected by read-only filesystem)
+  const testDir = fs.existsSync('./test_temp') ? './test_temp' : './test';
+  const maliciousPath = `${testDir}/malicious-module.js`;
+  fs.writeFileSync(maliciousPath, maliciousModule);
 
   try {
-    const module = loader.loadModule('./test/malicious-module.js');
+    const module = loader.loadModule(maliciousPath);
     console.log('❌ Malicious module was incorrectly allowed!');
   } catch (error) {
     console.log('✅ Malicious module correctly rejected:', error.message.split('\n')[0]);
   } finally {
     // Cleanup
-    if (fs.existsSync('./test/malicious-module.js')) {
-      fs.unlinkSync('./test/malicious-module.js');
+    if (fs.existsSync(maliciousPath)) {
+      fs.unlinkSync(maliciousPath);
     }
   }
 
@@ -66,17 +69,18 @@ module.exports = {
 };
 `;
 
-  fs.writeFileSync('./test/crypto-module.js', cryptoOnlyModule);
+  const cryptoPath = `${testDir}/crypto-module.js`;
+  fs.writeFileSync(cryptoPath, cryptoOnlyModule);
 
   try {
-    const module = loader.loadModule('./test/crypto-module.js');
+    const module = loader.loadModule(cryptoPath);
     console.log('✅ Crypto-only module loaded successfully');
   } catch (error) {
     console.error('❌ Crypto-only module rejected:', error.message);
   } finally {
     // Cleanup
-    if (fs.existsSync('./test/crypto-module.js')) {
-      fs.unlinkSync('./test/crypto-module.js');
+    if (fs.existsSync(cryptoPath)) {
+      fs.unlinkSync(cryptoPath);
     }
   }
 }

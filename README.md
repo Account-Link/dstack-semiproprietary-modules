@@ -8,7 +8,7 @@ A novel approach to encrypted module distribution with self-containment verifica
 
 1. **Authors** encrypt modules and publish to public bulletin board
 2. **Enclaves** decrypt according to on-chain policy (no author needed)
-3. **Codesigned verifier** proves modules are truly self-contained
+3. **Sudoku-specific verifier** proves modules are truly self-contained
 4. **No cheating** with external hints or pre-computed solutions
 
 ## Quick Start
@@ -18,7 +18,7 @@ A novel approach to encrypted module distribution with self-containment verifica
 npm install
 
 # Publish a module to bulletin board
-node tools/publish-module.js private_module/sudoku-solver-selfcontained.js sudoku-solver-v1
+node scripts/publish-module.js private_module/sudoku-solver-selfcontained.js sudoku-solver-v1
 
 # Test the system
 node test/test-semiprop-system.js
@@ -27,11 +27,34 @@ node test/test-semiprop-system.js
 node enclave/semiprop-service.js
 ```
 
+## Running Tests
+
+### Local Tests
+```bash
+# Run all tests locally
+npm test                              # Service functionality tests
+npm run test-module                   # Module loading and security tests
+node test/test-sudoku-verification.js # Sudoku-specific verification tests
+node test/test-semiprop-system.js     # Complete semi-proprietary system tests
+```
+
+### Docker Tests
+```bash
+# Setup: Make bulletin board writable for Docker
+chmod 777 ./bulletin_board
+
+# Run tests in Docker
+docker compose run --rm semiprop-enclave npm test
+docker compose run --rm semiprop-enclave npm run test-module
+docker compose run --rm semiprop-enclave node test/test-sudoku-verification.js
+docker compose run --rm semiprop-enclave node test/test-semiprop-system.js
+```
+
 ## Directory Structure
 
 - `private_module/` - Author's private solver code
 - `enclave/` - TEE code (verifier + service + encryption)
-- `tools/` - Publishing utilities
+- `scripts/` - Module publishing and deployment utilities
 - `test/` - System verification tests
 - `bulletin_board/` - Public encrypted module storage
 
@@ -71,7 +94,7 @@ docker-compose --profile tools up
 
 - Payment policies enforced via attestation
 - Time-based expiration checked cryptographically
-- Self-containment verified via codesigned analysis
+- Self-containment verified via sudoku-specific analysis
 - No external dependencies allowed in modules
 
 ### Audit Trail
