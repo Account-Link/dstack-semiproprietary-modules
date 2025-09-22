@@ -1,0 +1,189 @@
+# Timing Side-Channel Attack on Self-Contained Sudoku Solvers
+
+**Academic Research Purpose**: Computer Security Education and Defensive Security Research
+
+## Overview
+
+This directory contains a proof-of-concept timing side-channel attack against self-contained module verification systems. The attack demonstrates how a malicious sudoku solver can leak puzzle information through timing patterns while appearing to comply with self-containment requirements.
+
+## Attack Description
+
+### Vulnerability
+
+The current module verification system (in `../enclave/sudoku-verifier.js`) successfully prevents:
+- External module imports
+- Network access
+- File system access
+- Global scope access
+
+However, it does **NOT** detect timing-based information leakage.
+
+### Attack Mechanism
+
+The malicious solver (`malicious-solver.js`) encodes puzzle information in its execution timing by:
+
+1. **Binary Encoding**: Converting puzzle state to binary representation
+2. **Timing Modulation**: Using CPU utilization patterns to signal bits:
+   - High CPU usage (busy loops) = binary '1'
+   - Low CPU usage (minimal computation) = binary '0'
+3. **Covert Channel**: External monitoring can decode puzzle data from timing patterns
+
+### Technical Details
+
+- **Bit Duration**: 100ms per bit (configurable)
+- **Encoding Format**:
+  - 7 bits for cell position (0-80)
+  - 4 bits for cell value (1-9)
+  - 10 consecutive '1' bits as end marker
+- **CPU Manipulation**: Uses `Math.sin()`, `Math.cos()`, `Math.sqrt()` in busy loops
+- **Timing Precision**: Uses `Date.now()` for wall-clock timing
+
+## Files
+
+### Core Attack Components
+
+- **`malicious-solver.js`**: Sudoku solver with embedded timing side-channel
+- **`timing-monitor.js`**: External decoder that extracts puzzle data from timing
+- **`test-timing-attack.js`**: Comprehensive test suite demonstrating the attack
+
+### Usage
+
+```bash
+# Run full attack demonstration
+node test-timing-attack.js
+
+# Run basic attack test
+node test-timing-attack.js --basic
+
+# Test if malicious solver passes verification
+node ../test/test-sudoku-verification.js
+```
+
+## Attack Flow
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Input Puzzle  │───▶│ Malicious Solver │───▶│ Timing Monitor  │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                              │                          │
+                              ▼                          ▼
+                    ┌──────────────────┐    ┌─────────────────┐
+                    │ CPU Utilization  │───▶│ Decoded Puzzle  │
+                    │ Timing Pattern   │    │ Information     │
+                    └──────────────────┘    └─────────────────┘
+```
+
+## Security Implications
+
+### Current Detection Status
+- ✅ Passes module verification (appears self-contained)
+- ✅ Produces correct sudoku solutions
+- ❌ **NOT detected** by current security measures
+
+### Information Leakage
+- **What**: Complete puzzle state including filled cells and positions
+- **How**: CPU utilization patterns observable from outside the enclave
+- **Bandwidth**: ~1 bit per 100ms (very coarse but functional)
+
+### Performance Impact
+- Significant increase in solving time due to deliberate delays
+- Detectable CPU usage spikes during information transmission
+- May be observable through system monitoring
+
+## Potential Defenses
+
+### 1. Execution Time Analysis
+```javascript
+// Detect anomalous solving times
+if (solvingTime > expectedTime * 2) {
+  throw new Error('Suspicious execution time detected');
+}
+```
+
+### 2. CPU Usage Monitoring
+```javascript
+// Monitor CPU patterns during execution
+const cpuUsage = process.cpuUsage();
+if (detectAnomalousPattern(cpuUsage)) {
+  throw new Error('Suspicious CPU usage pattern detected');
+}
+```
+
+### 3. Constant-Time Execution
+- Enforce fixed execution time regardless of puzzle complexity
+- Add random delays to mask timing patterns
+- Use cryptographic constant-time algorithms
+
+### 4. Statistical Analysis
+- Analyze timing patterns across multiple runs
+- Detect non-natural timing variations
+- Use machine learning to identify side-channel signatures
+
+### 5. Resource Profiling
+```javascript
+// Profile resource usage during verification
+const profile = {
+  cpuCycles: measureCPUCycles(),
+  memoryAccess: measureMemoryPattern(),
+  systemCalls: monitorSystemCalls()
+};
+```
+
+## Research Applications
+
+This attack demonstrates important cybersecurity concepts:
+
+1. **Side-Channel Vulnerabilities**: How information can leak through unintended channels
+2. **Verification Limitations**: Static analysis alone may not catch all attacks
+3. **Defense in Depth**: Multiple detection mechanisms needed
+4. **Covert Channels**: Creative ways to exfiltrate data from restricted environments
+
+## Ethical Considerations
+
+This code is provided for:
+- ✅ Academic research and education
+- ✅ Defensive security development
+- ✅ Vulnerability awareness and mitigation
+
+**DO NOT USE** for:
+- ❌ Malicious attacks on production systems
+- ❌ Unauthorized data exfiltration
+- ❌ Circumventing legitimate security controls
+
+## Limitations
+
+### Current Implementation
+- Very low bandwidth (1 bit/100ms)
+- Requires external timing measurement
+- Susceptible to system noise and interference
+- Large performance overhead makes detection easier
+
+### Real-World Constraints
+- TEE environments may have additional timing restrictions
+- Hardware-level timing isolation in production systems
+- Network isolation prevents external monitoring
+- System monitoring may detect anomalous patterns
+
+## Future Research Directions
+
+1. **Higher Bandwidth Channels**: Using cache timing, branch prediction
+2. **Stealthier Techniques**: Hiding patterns in legitimate computation
+3. **Cross-Channel Attacks**: Combining multiple side-channels
+4. **Defense Evaluation**: Testing detection mechanisms
+5. **Hardware Countermeasures**: TEE-specific protections
+
+## Conclusion
+
+This timing side-channel attack demonstrates a fundamental limitation in current module verification approaches. While static analysis can detect obvious external dependencies, it cannot prevent information leakage through timing patterns.
+
+Effective defense requires:
+- Dynamic execution monitoring
+- Timing pattern analysis
+- Resource usage profiling
+- Statistical anomaly detection
+
+The attack serves as a valuable example for security researchers and educators working on defensive cybersecurity measures.
+
+---
+
+**Disclaimer**: This research is conducted for defensive security purposes and academic education. The techniques demonstrated should only be used to improve security systems and educate about potential vulnerabilities.
