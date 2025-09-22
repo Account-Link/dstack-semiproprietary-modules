@@ -1,5 +1,5 @@
+const { DstackClient } = require('@phala/dstack-sdk');
 const crypto = require('crypto');
-const fs = require('fs');
 
 /**
  * DStack Integration for Semi-Proprietary Modules
@@ -12,8 +12,7 @@ const fs = require('fs');
 
 class DStackIntegration {
   constructor() {
-    this.guestAgentUrl = process.env.DSTACK_SIMULATOR_ENDPOINT || 'unix:///var/run/dstack.sock';
-    this.simulatorMode = !!process.env.DSTACK_SIMULATOR_ENDPOINT;
+    this.client = null;
     this.instanceInfo = null;
   }
 
@@ -22,46 +21,25 @@ class DStackIntegration {
    */
   async initialize() {
     console.log(`🔧 Initializing dstack integration...`);
-    console.log(`   Mode: ${this.simulatorMode ? 'Simulator' : 'Production TEE'}`);
-    console.log(`   Endpoint: ${this.guestAgentUrl}`);
 
     try {
-      // Get TEE instance information
-      this.instanceInfo = await this.getInstanceInfo();
+      this.client = new DstackClient();
+      this.instanceInfo = await this.client.info();
 
-      if (this.instanceInfo) {
-        console.log(`✅ DStack integration initialized`);
-        console.log(`   App ID: ${this.instanceInfo.app_id}`);
-        console.log(`   Instance ID: ${this.instanceInfo.instance_id}`);
-        console.log(`   Device ID: ${this.instanceInfo.device_id}`);
-      }
+      console.log(`✅ DStack integration initialized`);
+      console.log(`   App ID: ${this.instanceInfo.app_id}`);
+      console.log(`   Instance ID: ${this.instanceInfo.instance_id}`);
+      console.log(`   Device ID: ${this.instanceInfo.device_id}`);
 
       return this.instanceInfo;
     } catch (error) {
       console.error(`❌ DStack initialization failed: ${error.message}`);
-
       console.log(`🔄 Falling back to mock mode for development...`);
-      this.simulatorMode = true;
+      this.client = null;
       return this.initializeMockMode();
     }
   }
 
-  /**
-   * Get TEE instance information via dstack guest agent
-   */
-  async getInstanceInfo() {
-    if (this.simulatorMode) {
-      // HTTP request to simulator
-      const response = await fetch(`${this.guestAgentUrl}/info`);
-      if (!response.ok) {
-        throw new Error(`Guest agent request failed: ${response.statusText}`);
-      }
-      return await response.json();
-    } else {
-      // Unix socket request (production)
-      return await this.makeUnixSocketRequest('/info');
-    }
-  }
 
   /**
    * Derive app-specific key using dstack guest agent
@@ -69,45 +47,28 @@ class DStackIntegration {
   async deriveKey(path, purpose = 'encryption') {
     console.log(`🔑 Deriving dstack key: ${path} (${purpose})`);
 
-    try {
-      const request = {
-        path: path,
-        purpose: purpose
-      };
+    if (this.client) {
+      try {
+        const keyResult = await this.client.getKey(path, purpose);
 
-      let response;
-      if (this.simulatorMode) {
-        const httpResponse = await fetch(`${this.guestAgentUrl}/get_key`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request)
-        });
+        console.log(`✅ Key derived successfully`);
+        console.log(`   Path: ${path}`);
+        console.log(`   Purpose: ${purpose}`);
+        console.log(`   Signature chain length: ${keyResult.signature_chain?.length || 0}`);
 
-        if (!httpResponse.ok) {
-          throw new Error(`Key derivation failed: ${httpResponse.statusText}`);
-        }
+        return {
+          key: Buffer.from(keyResult.key),
+          signatureChain: keyResult.signature_chain || [],
+          derivedAt: new Date().toISOString()
+        };
 
-        response = await httpResponse.json();
-      } else {
-        response = await this.makeUnixSocketRequest('/get_key', request);
+      } catch (error) {
+        console.error(`❌ Key derivation failed: ${error.message}`);
+        console.log(`🔄 Falling back to mock key derivation...`);
+        return this.deriveMockKey(path, purpose);
       }
-
-      console.log(`✅ Key derived successfully`);
-      console.log(`   Path: ${path}`);
-      console.log(`   Purpose: ${purpose}`);
-      console.log(`   Signature chain length: ${response.signature_chain?.length || 0}`);
-
-      return {
-        key: Buffer.from(response.key, 'hex'),
-        signatureChain: response.signature_chain || [],
-        derivedAt: new Date().toISOString()
-      };
-
-    } catch (error) {
-      console.error(`❌ Key derivation failed: ${error.message}`);
-
-      console.log(`🔄 Falling back to mock key derivation...`);
-      this.simulatorMode = true;
+    } else {
+      console.log(`🔄 Using mock key derivation (no dstack client)...`);
       return this.deriveMockKey(path, purpose);
     }
   }
@@ -118,42 +79,41 @@ class DStackIntegration {
   async getAttestation(reportData = null) {
     console.log(`📋 Getting TEE attestation quote...`);
 
-    try {
-      const request = {
-        report_data: reportData ? Buffer.from(reportData).toString('hex') : null
-      };
+    if (this.client) {
+      try {
+        let processedReportData = reportData;
 
-      let response;
-      if (this.simulatorMode) {
-        const httpResponse = await fetch(`${this.guestAgentUrl}/get_quote`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(request)
-        });
-
-        if (!httpResponse.ok) {
-          throw new Error(`Attestation failed: ${httpResponse.statusText}`);
+        // If reportData is too large (>64 bytes), hash it
+        if (reportData) {
+          const dataBuffer = Buffer.isBuffer(reportData) ? reportData : Buffer.from(JSON.stringify(reportData));
+          if (dataBuffer.length > 64) {
+            console.log(`⚠️  Report data too large (${dataBuffer.length} bytes), hashing to 32 bytes`);
+            processedReportData = crypto.createHash('sha256').update(dataBuffer).digest();
+          } else {
+            processedReportData = dataBuffer;
+          }
         }
 
-        response = await httpResponse.json();
-      } else {
-        response = await this.makeUnixSocketRequest('/get_quote', request);
+        const quoteResult = await this.client.getQuote(processedReportData);
+
+        console.log(`✅ Attestation quote generated`);
+        console.log(`   Quote length: ${quoteResult.quote?.length || 0} bytes`);
+
+        return {
+          quote: quoteResult.quote,
+          reportData: processedReportData,
+          eventLog: quoteResult.event_log,
+          generatedAt: new Date().toISOString(),
+          replayRtmrs: quoteResult.replayRtmrs
+        };
+
+      } catch (error) {
+        console.error(`❌ Attestation failed: ${error.message}`);
+        console.log(`🔄 Using mock attestation for development...`);
+        return this.generateMockAttestation(reportData);
       }
-
-      console.log(`✅ Attestation quote generated`);
-      console.log(`   Quote length: ${response.quote?.length || 0} bytes`);
-
-      return {
-        quote: response.quote,
-        reportData: reportData,
-        generatedAt: new Date().toISOString()
-      };
-
-    } catch (error) {
-      console.error(`❌ Attestation failed: ${error.message}`);
-
-      console.log(`🔄 Using mock attestation for development...`);
-      this.simulatorMode = true;
+    } else {
+      console.log(`🔄 Using mock attestation (no dstack client)...`);
       return this.generateMockAttestation(reportData);
     }
   }
@@ -222,18 +182,22 @@ class DStackIntegration {
   initializeMockMode() {
     console.log(`🔄 Initializing mock dstack mode...`);
 
+    // Use deterministic mock values for testing consistency
+    const mockSeed = 'dstack-mock-seed-for-testing';
+    const hash = crypto.createHash('sha256').update(mockSeed).digest();
+
     this.instanceInfo = {
-      app_id: '0x' + crypto.randomBytes(20).toString('hex'),
-      instance_id: '0x' + crypto.randomBytes(16).toString('hex'),
-      device_id: '0x' + crypto.randomBytes(32).toString('hex'),
+      app_id: '0x' + hash.slice(0, 20).toString('hex'),
+      instance_id: '0x' + hash.slice(20, 36).toString('hex'),
+      device_id: '0x' + hash.slice(36, 68).toString('hex'),
       app_name: 'semiprop-sudoku-demo',
-      compose_hash: '0x' + crypto.randomBytes(32).toString('hex'),
+      compose_hash: '0x' + crypto.createHash('sha256').update(mockSeed + 'compose').digest().slice(0, 32).toString('hex'),
       tcb_info: {
-        mrtd: '0x' + crypto.randomBytes(48).toString('hex'),
-        rtmr0: '0x' + crypto.randomBytes(48).toString('hex'),
-        rtmr1: '0x' + crypto.randomBytes(48).toString('hex'),
-        rtmr2: '0x' + crypto.randomBytes(48).toString('hex'),
-        rtmr3: '0x' + crypto.randomBytes(48).toString('hex')
+        mrtd: '0x' + crypto.createHash('sha256').update(mockSeed + 'mrtd').digest().slice(0, 48).toString('hex'),
+        rtmr0: '0x' + crypto.createHash('sha256').update(mockSeed + 'rtmr0').digest().slice(0, 48).toString('hex'),
+        rtmr1: '0x' + crypto.createHash('sha256').update(mockSeed + 'rtmr1').digest().slice(0, 48).toString('hex'),
+        rtmr2: '0x' + crypto.createHash('sha256').update(mockSeed + 'rtmr2').digest().slice(0, 48).toString('hex'),
+        rtmr3: '0x' + crypto.createHash('sha256').update(mockSeed + 'rtmr3').digest().slice(0, 48).toString('hex')
       }
     };
 
@@ -244,7 +208,8 @@ class DStackIntegration {
    * Mock key derivation for development
    */
   deriveMockKey(path, purpose) {
-    const mockSeed = `mock-dstack-key:${this.instanceInfo.app_id}:${path}:${purpose}`;
+    const appId = this.instanceInfo?.app_id || 'mock-app-id';
+    const mockSeed = `mock-dstack-key:${appId}:${path}:${purpose}`;
     const key = crypto.createHash('sha256').update(mockSeed).digest();
 
     // Create mock signature chain
@@ -274,14 +239,6 @@ class DStackIntegration {
     };
   }
 
-  /**
-   * Make request to Unix socket (production dstack guest agent)
-   */
-  async makeUnixSocketRequest(path, data = null) {
-    // This would implement the actual Unix socket communication
-    // For now, throw error to force simulator mode in development
-    throw new Error('Unix socket communication not implemented in demo');
-  }
 
   /**
    * Get current TEE instance information
@@ -298,7 +255,7 @@ class DStackIntegration {
    * Check if running in simulator mode
    */
   isSimulatorMode() {
-    return this.simulatorMode;
+    return this.client === null;
   }
 }
 

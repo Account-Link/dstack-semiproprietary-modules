@@ -32,7 +32,7 @@ class SemiProprietaryModuleLoader {
     try {
       // 1. Retrieve encrypted module from bulletin board
       console.log(`📥 Step 1: Retrieving from bulletin board...`);
-      const encryptedPackage = this.encryption.retrieveFromBulletinBoard(moduleId);
+      const encryptedPackage = await this.encryption.retrieveFromBulletinBoard(moduleId);
 
       // 2. Verify policy allows decryption in this enclave
       console.log(`🔑 Step 2: Checking decryption policy...`);

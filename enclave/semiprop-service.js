@@ -19,20 +19,9 @@ class SemiProprietaryService {
     this.defaultModuleId = 'sudoku-solver-v1';
   }
 
-  async initialize(moduleId = this.defaultModuleId) {
+  async initialize() {
     console.log('🚀 Initializing Semi-Proprietary Sudoku Service...');
-
-    try {
-      // Load the semi-proprietary module from bulletin board
-      console.log(`📦 Loading module: ${moduleId}`);
-      this.solverModule = await this.loader.loadModuleById(moduleId);
-
-      console.log('✅ Semi-proprietary service initialized successfully');
-
-    } catch (error) {
-      console.error('❌ Failed to initialize service:', error.message);
-      throw error;
-    }
+    console.log('✅ Service ready to load modules on demand');
   }
 
   createServer(port = 3000) {
@@ -47,6 +36,7 @@ class SemiProprietaryService {
       console.log('   GET /health - Health check');
       console.log('   GET /module-info - Module information');
       console.log('   GET /loaded-modules - List of loaded modules');
+      console.log('   GET /public-key - Get enclave public key');
       console.log('   POST /load-module - Load a specific module by ID');
     });
 
@@ -80,6 +70,8 @@ class SemiProprietaryService {
         await this.handleSolve(req, res);
       } else if (path === '/load-module' && method === 'POST') {
         await this.handleLoadModule(req, res);
+      } else if (path === '/public-key' && method === 'GET') {
+        await this.handlePublicKey(req, res);
       } else {
         this.handleNotFound(req, res);
       }
@@ -220,11 +212,59 @@ class SemiProprietaryService {
     });
   }
 
+  async handlePublicKey(req, res) {
+    try {
+      console.log(`🔑 Getting enclave public key`);
+
+      // Use the loader's dstack integration to derive the enclave key
+      const dstack = this.loader.encryption.dstack;
+      await dstack.initialize();
+
+      const crypto = require('crypto');
+      const secp256k1 = require('secp256k1');
+
+      // Use a fixed key path for the enclave identity
+      const keyPath = 'enclave-identity';
+
+      console.log(`📍 Enclave key path: ${keyPath}`);
+
+      // Get the enclave's private key
+      const keyInfo = await dstack.deriveKey(keyPath, 'enclave-public-key');
+
+      // Derive the public key from private key
+      const publicKey = secp256k1.publicKeyCreate(keyInfo.key, false); // uncompressed
+      const compressedPublicKey = secp256k1.publicKeyCreate(keyInfo.key, true); // compressed
+
+      console.log(`✅ Enclave public key derived successfully`);
+
+      // Create the response with enclave public key and signature chain
+      const enclaveKey = {
+        keyPath: keyPath,
+        publicKey: Buffer.from(compressedPublicKey).toString('hex'),
+        publicKeyUncompressed: Buffer.from(publicKey).toString('hex'),
+        signatureChain: keyInfo.signatureChain || [],
+        derivedAt: new Date().toISOString(),
+        enclaveInfo: dstack.getInstanceInfo()
+      };
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(enclaveKey, null, 2));
+
+    } catch (error) {
+      console.error(`❌ Public key derivation failed: ${error.message}`);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        error: 'Public key derivation failed',
+        message: error.message
+      }));
+    }
+  }
+
   handleNotFound(req, res) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       error: 'Endpoint not found',
-      availableEndpoints: ['/health', '/module-info', '/loaded-modules', '/solve', '/load-module']
+      availableEndpoints: ['/health', '/module-info', '/loaded-modules', '/solve', '/load-module', '/public-key']
     }));
   }
 

@@ -1,13 +1,16 @@
 const crypto = require('crypto');
 const fs = require('fs');
+const secp256k1 = require('secp256k1');
+
 const { DStackIntegration } = require('./dstack-integration');
 
 /**
  * Module Encryption for Semi-Proprietary Modules
  *
  * This implements the encryption layer for modules that will be stored
- * on a public bulletin board (blockchain blob storage) and can be
- * decrypted by authorized dstack enclaves according to on-chain policy.
+ * on a public bulletin board and can be decrypted by authorized dstack
+ * enclaves according to policy. The enclave is URL-agnostic - it can fetch
+ * from local files, HTTP URLs (including gists), or any other endpoint.
  */
 
 class ModuleEncryption {
@@ -93,19 +96,29 @@ class ModuleEncryption {
         requestPolicy
       );
 
-      // 2. Derive the decryption key using dstack
-      const keyInfo = await this.dstack.deriveModuleKey(moduleId, encryptedPackage.metadata.policy);
+      // 2. Check encryption version and decrypt accordingly
+      const encryptionVersion = encryptedPackage.metadata.encryptionVersion || '2.0';
+      let decrypted;
+      let keyInfo;
+
+      if (encryptionVersion.startsWith('3.0-ecies')) {
+        // ECIES encryption - derive private key and decrypt
+        decrypted = await this.decryptECIES(encryptedPackage, moduleId);
+        keyInfo = { keyPath: 'ecies-derived' }; // placeholder
+      } else {
+        // Legacy AES encryption
+        keyInfo = await this.dstack.deriveModuleKey(moduleId, encryptedPackage.metadata.policy);
+
+        const key = crypto.scryptSync(keyInfo.moduleKey, 'salt', 32);
+        const iv = Buffer.from(encryptedPackage.iv, 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+
+        decrypted = decipher.update(encryptedPackage.encryptedSource, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+      }
 
       // 3. Verify integrity
       const expectedHash = encryptedPackage.metadata.sourceHash;
-
-      // 4. Decrypt the source
-      const key = crypto.scryptSync(keyInfo.moduleKey, 'salt', 32);
-      const iv = Buffer.from(encryptedPackage.iv, 'hex');
-      const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
-
-      let decrypted = decipher.update(encryptedPackage.encryptedSource, 'hex', 'utf8');
-      decrypted += decipher.final('utf8');
 
       // 5. Verify source integrity
       const actualHash = crypto.createHash('sha256').update(decrypted).digest('hex');
@@ -137,6 +150,59 @@ class ModuleEncryption {
       console.error(`❌ Decryption failed: ${error.message}`);
       throw new Error(`Module decryption failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Decrypt ECIES-encrypted module
+   */
+  async decryptECIES(encryptedPackage, moduleId) {
+    // Use the enclave's identity key for decryption
+    const keyPath = 'enclave-identity';
+
+    // Get the enclave's private key from dstack
+    const keyInfo = await this.dstack.deriveKey(keyPath, 'enclave-public-key');
+    const privateKey = keyInfo.key;
+
+    // Decrypt using ECIES
+    const encryptedData = Buffer.from(encryptedPackage.encryptedSource, 'hex');
+
+    if (encryptedData.length < 97) { // 65 + 32 minimum
+      throw new Error('Invalid encrypted data length');
+    }
+
+    // Extract components
+    const ephemeralPublicKey = encryptedData.slice(0, 65);
+    const encrypted = encryptedData.slice(65, -32);
+    const mac = encryptedData.slice(-32);
+
+    // Perform ECDH to get shared secret
+    const sharedPoint = secp256k1.publicKeyTweakMul(ephemeralPublicKey, privateKey);
+    const sharedSecret = sharedPoint.slice(1, 33); // x-coordinate
+
+    // Derive keys
+    const derivedKey = crypto.createHmac('sha256', Buffer.alloc(0))
+      .update(sharedSecret)
+      .digest();
+
+    const encKey = derivedKey.slice(0, 16);
+    const macKey = derivedKey.slice(16, 32);
+
+    // Verify MAC
+    const macData = Buffer.concat([ephemeralPublicKey, encrypted]);
+    const expectedMac = crypto.createHmac('sha256', macKey).update(macData).digest();
+
+    if (!mac.equals(expectedMac)) {
+      throw new Error('MAC verification failed');
+    }
+
+    // Extract IV and decrypt the data
+    const iv = encrypted.slice(0, 16);
+    const actualEncrypted = encrypted.slice(16);
+    const decipher = crypto.createDecipheriv('aes-128-ctr', encKey, iv);
+    let decrypted = decipher.update(actualEncrypted);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+    return decrypted.toString('utf-8');
   }
 
   /**
@@ -187,25 +253,45 @@ class ModuleEncryption {
   }
 
   /**
-   * Retrieve encrypted module from bulletin board
+   * Retrieve encrypted module from bulletin board (URL-agnostic)
    */
-  retrieveFromBulletinBoard(moduleId) {
-    console.log(`📥 Retrieving module from bulletin board: ${moduleId}`);
+  async retrieveFromBulletinBoard(moduleIdOrUrl) {
+    console.log(`📥 Retrieving module from bulletin board: ${moduleIdOrUrl}`);
 
     try {
-      const bulletinPath = `./bulletin_board/${moduleId}.json`;
+      let encryptedPackage;
 
-      if (!fs.existsSync(bulletinPath)) {
-        throw new Error(`Module not found on bulletin board: ${moduleId}`);
+      if (moduleIdOrUrl.startsWith('http://') || moduleIdOrUrl.startsWith('https://')) {
+        // Fetch from HTTP URL (gist, etc.)
+        console.log(`🌐 Fetching from URL: ${moduleIdOrUrl}`);
+        const response = await fetch(moduleIdOrUrl);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        encryptedPackage = await response.json();
+
+      } else if (moduleIdOrUrl.startsWith('file://')) {
+        // Local file URL
+        const filePath = moduleIdOrUrl.replace('file://', '');
+        console.log(`📁 Reading from file: ${filePath}`);
+        encryptedPackage = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+
+      } else {
+        // Assume it's a module ID, look in local bulletin board
+        const bulletinPath = `./bulletin_board/${moduleIdOrUrl}.json`;
+
+        if (!fs.existsSync(bulletinPath)) {
+          throw new Error(`Module not found on bulletin board: ${moduleIdOrUrl}`);
+        }
+
+        const bulletinEntry = JSON.parse(fs.readFileSync(bulletinPath, 'utf-8'));
+        encryptedPackage = bulletinEntry.encryptedPackage;
       }
 
-      const bulletinEntry = JSON.parse(fs.readFileSync(bulletinPath, 'utf-8'));
-
       console.log(`✅ Module retrieved from bulletin board`);
-      console.log(`   Published: ${bulletinEntry.publishedAt}`);
-      console.log(`   Size: ${bulletinEntry.size} bytes`);
+      console.log(`   Size: ${JSON.stringify(encryptedPackage).length} bytes`);
 
-      return bulletinEntry.encryptedPackage;
+      return encryptedPackage;
 
     } catch (error) {
       console.error(`❌ Bulletin board retrieval failed: ${error.message}`);

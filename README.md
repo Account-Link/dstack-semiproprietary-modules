@@ -17,7 +17,7 @@ A novel approach to encrypted module distribution with self-containment verifica
 # Install dependencies
 npm install
 
-# Publish a module to bulletin board
+# Publish a module to local bulletin board
 node scripts/publish-module.js private_module/sudoku-solver-selfcontained.js sudoku-solver-v1
 
 # Test the system
@@ -26,6 +26,23 @@ node test/test-semiprop-system.js
 # Run enclave service
 node enclave/semiprop-service.js
 ```
+
+## GitHub Gist Bulletin Board
+
+Use GitHub Gists as a distributed bulletin board for encrypted modules:
+
+```bash
+# 1. Get GitHub token with gist scope from https://github.com/settings/tokens
+export GITHUB_TOKEN="your_token_here"
+
+# 2. Encrypt and publish module
+node scripts/encrypt-module.js solver.js my-solver --public-key ./public-keys/my-solver.json
+node scripts/publish-module-gist.js solver.js my-solver
+
+# 3. Use the returned raw gist URL in your enclave
+```
+
+The enclave loads from the raw gist URL with zero GitHub dependencies.
 
 ## Running Tests
 
@@ -62,24 +79,8 @@ docker compose run --rm semiprop-enclave node test/test-semiprop-system.js
 
 ```bash
 # Run complete system
-docker-compose up
-
-# Run with tools
-docker-compose --profile tools up
+docker compose up
 ```
-
-## Development Status
-
-🚧 **In Development** - Core functionality working, ready for DStack deployment
-
-- ✅ Module encryption/decryption
-- ✅ Self-containment verification
-- ✅ Policy-based access control
-- ✅ Bulletin board storage
-- ✅ DStack TEE integration (JavaScript SDK)
-- ✅ DStack deployment configuration
-- 🚧 Real blockchain bulletin board
-
 
 ## Security Considerations
 
