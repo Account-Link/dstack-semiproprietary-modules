@@ -1,4 +1,4 @@
-const { SudokuModuleLoader } = require('./module-loader');
+const { SudokuModuleLoader } = require('./sudoku-module-loader');
 const http = require('http');
 const url = require('url');
 

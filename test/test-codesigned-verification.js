@@ -1,4 +1,4 @@
-const { SudokuModuleLoader } = require('../sudoku-module-loader');
+const { SudokuModuleLoader } = require('../enclave/sudoku-module-loader');
 const fs = require('fs');
 
 console.log('🧪 Testing Codesigned Sudoku Module Verification...\n');
@@ -9,7 +9,7 @@ async function testCodesignedVerification() {
   console.log('🔍 TEST 1: Self-contained solver (should PASS)');
   console.log('=' .repeat(60));
   try {
-    const module = loader.loadModule('./sudoku-solver-selfcontained.js');
+    const module = loader.loadModule('./private_module/sudoku-solver-selfcontained.js');
     console.log('✅ Self-contained solver correctly accepted\n');
   } catch (error) {
     console.error('❌ Self-contained solver incorrectly rejected:', error.message.split('\n')[0]);

@@ -1,4 +1,4 @@
-const { SudokuModuleLoader } = require('../module-loader');
+const { SudokuModuleLoader } = require('../enclave/sudoku-module-loader');
 const fs = require('fs');
 
 console.log('🧪 Testing Sudoku Module Loading...\n');
@@ -8,7 +8,7 @@ async function testModuleLoading() {
 
   console.log('1. Testing valid sudoku solver module...');
   try {
-    const module = loader.loadModule('./sudoku-solver.js');
+    const module = loader.loadModule('./private_module/sudoku-solver-selfcontained.js');
     console.log('✅ Module loaded successfully');
     console.log(`📋 Metadata:`, module.metadata);
   } catch (error) {

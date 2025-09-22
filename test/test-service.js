@@ -1,4 +1,4 @@
-const { SudokuService } = require('../sudoku-service');
+const { SudokuService } = require('../enclave/sudoku-service');
 
 console.log('🧪 Testing Sudoku Service...\n');
 
@@ -20,7 +20,7 @@ async function testService() {
 
   console.log('1. Initializing service...');
   try {
-    await service.initialize();
+    await service.initialize('./private_module/sudoku-solver-selfcontained.js');
     console.log('✅ Service initialized successfully');
   } catch (error) {
     console.error('❌ Service initialization failed:', error.message);
